@@ -1,0 +1,180 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <!-- MapLibre のJavaScriptとCSS -->
+    <link rel="stylesheet" href="https://unpkg.com/maplibre-gl@4.7.1/dist/maplibre-gl.css" />
+    <script src="https://unpkg.com/maplibre-gl@4.7.1/dist/maplibre-gl.js"></script>
+</head>
+<body>
+        <div id="sidebar" class="sidebar" style='position: absolute; top:0; right:0; width:250px;font-size: small;z-index: 10; background-color: white;'>
+        <!-- サイドバー -->
+        <h2>青森の温泉・地質検索</h2>
+        
+        <!-- 1. 検索・絞り込みエリア -->
+        <div class="search-section">
+            <input type="text" id="search-input" placeholder="温泉名やキーワード" oninput="filterOnsen()">
+            
+            <div class="tag-group">
+            <label><input type="checkbox" value="単純" onchange="filterOnsen()"> 単純</label>
+            <label><input type="checkbox" value="塩化物" onchange="filterOnsen()"> 塩化物</label>
+            <label><input type="checkbox" value="炭酸水素塩" onchange="filterOnsen()"> 炭酸水素塩</label>
+            <label><input type="checkbox" value="硫酸塩" onchange="filterOnsen()"> 硫酸塩</label>
+            <label><input type="checkbox" value="酸性" onchange="filterOnsen()"> 酸性</label>
+            <label><input type="checkbox" value="硫黄" onchange="filterOnsen()"> 硫黄</label>
+            <label><input type="checkbox" value="含鉄" onchange="filterOnsen()"> 含鉄</label>
+            </div>
+
+            <hr>
+
+            <!-- 2. 詳細情報表示エリア（ピンをクリックした時にここが変わる） -->
+            <div id="detail-section">
+                <p class="placeholder-text">地図上のピンをクリックすると、ここに温泉と地質の詳細情報が表示されます。</p>
+            </div>
+        </div>
+    </div>
+    <!-- 埋め込みマップのdivタグ。マップサイズはwidth（幅）とheight（高さ）で決まる -->
+    <div id='mapcontainer' style='width:100%; height:500px; z-index:0;'/>
+    <!-- 凡例用 -->
+    <div id='legend' style='position:absolute; top:5px; left:5px;z-index: 10; background-color: white;' />
+
+    <script>
+        const map =  new maplibregl.Map({
+            container: 'mapcontainer',
+            style: 'https://gsi-cyberjapan.github.io/gsivectortile-mapbox-gl-js/std.json', 
+            center: [140.74, 40.82], //青森市付近
+            zoom: 7.5, 
+            pitch: 0 
+        });
+
+        map.on('load', async() => {
+            // Add a GeoJSON source
+            map.addSource('onsen-geology',{
+                'type':'geojson',
+                'data': 'onsen_geology.geojson'
+            });
+            // Add a circle layer
+            map.addLayer({
+                'id':'onsen-layer',
+                'type':'circle',
+                'source':'onsen-geology',
+                'paint': {
+                    'circle-color': [
+                        'case', 
+                        ['in', '単純', ['get', '泉質']], '#42a5f5', //青
+                        ['in', '塩化物', ['get', '泉質']], '#ff7800', //オレンジ
+                        ['in', '炭酸水素塩', ['get', '泉質']], '#ab47bc', //ピンク
+                        ['in', '硫酸塩', ['get', '泉質']], '#8Bbc4a', //黄緑
+                        ['in', '酸性', ['get', '泉質']], '#e53935', //赤
+                        ['in', '硫黄', ['get', '泉質']], '#fbc02d', //濃い黄色
+                        '#9e9e9e'
+                    ],
+                    'circle-stroke-width': 1.5,
+                    'circle-stroke-color': '#ffffff'
+                },
+            });
+            // 産総研の地質図タイルソースを追加　※凡例数14
+            map.addSource('seamless-geology', {
+                'type': 'raster',
+                'tiles': [
+                    'https://gbank.gsj.jp/seamless/v2/api/1.3.1/tiles/{z}/{y}/{x}.png?type=level2'
+                ],
+                'tileSize': 256,
+                'attribution': '<a href="https://gbank.gsj.jp/seamless/" target="_blank">産総研 20万分の1日本シームレス地質図V2</a>'
+            });
+
+            // 地質図レイヤーを温泉ピンより下に追加
+             map.addLayer({
+                'id': 'geology-layer',
+                'type': 'raster',
+                'source': 'seamless-geology',
+            }, 'onsen-layer');
+        });
+
+        async function loadHtmlFromApi() {
+            try {
+                // 1. APIを呼び出す
+                const response = await fetch('https://gbank.gsj.jp/seamless/v2/api/1.3.1/legend.html?type=level2');
+                
+                // エラーハンドリング（HTTPステータスチェック）
+                if (!response.ok) {
+                    throw new Error(`HTTPエラー! ステータス: ${response.status}`);
+                }
+
+                // 2. レスポンスをテキスト（HTML文字列）として取得
+                const htmlText = await response.text();
+
+                // 3. 指定した要素の innerHTML に代入
+                const targetElement = document.getElementById('legend'); // 表示させたい要素のID
+                targetElement.innerHTML = htmlText;
+
+            } catch (error) {
+                console.error('HTMLの取得に失敗しました:', error);
+            }
+        }
+
+        // 凡例の取得
+        loadHtmlFromApi();
+
+
+        // ピンをクリックした時にサイドバーに詳細を表示する処理
+        map.on('click', 'onsen-layer', (e) => {
+            const props = e.features[0].properties;
+            
+            const detailHtml = `
+                <h2>${props.P12_002}</h2>
+                <h4>${props.P12_006}</h4>
+                <h4>${props.symbol}</h4>
+                <h4>${props.泉質}</h4>
+                <h4>🌋 地質との関わり</h4>
+                <p>${props.memo || '〇〇〇'}</p>
+            `;
+            
+            document.getElementById('detail-section').innerHTML = detailHtml;
+        });
+
+        // 検索・絞り込み処理
+        function filterOnsen() {
+            // フリーワード取得
+            const keyword = document.getElementById('search-input').value.trim();
+            
+            // チェックされたタグ（泉質）を取得
+            const checkboxes = document.querySelectorAll('.tag-group input[type="checkbox"]:checked');
+            const checkedTags = Array.from(checkboxes).map(cb => cb.value);
+
+            // MapLibreのフィルター条件を組み立てる
+            let filters = ['all'];
+
+            // 1. フリーワード検索（温泉名または泉質に含まれるか）
+            if (keyword) {
+                filters.push([
+                    'any',
+                    ['in', keyword, ['get', 'P12_002']],
+                    ['in', keyword, ['get', '泉質']]
+                ]);
+            }
+
+            // 2. チェックボックスの条件（選択した泉質が「すべて」含まれているか）
+            checkedTags.forEach(tag => {
+                filters.push(['in', tag, ['get', '泉質']]);
+            });
+
+            // フィルターをレイヤーに適用（条件に合わないピンは非表示または半透明になる）
+            if (filters.length > 1) {
+                map.setFilter('onsen-layer', filters);
+            } else {
+                map.setFilter('onsen-layer', null); // フィルター解除
+            }
+        }
+
+        // Change the cursor to a pointer when the mouse is over the places layer.
+        map.on('mouseenter', 'onsen-layer', () => {
+            map.getCanvas().style.cursor = 'pointer';
+        });
+
+        // Change it back to a pointer when it leaves.
+        map.on('mouseleave', 'onsen-layer', () => {
+            map.getCanvas().style.cursor = '';
+        });
+    </script>
+</body>
+</html>
