@@ -10,7 +10,7 @@
         <!-- サイドバー -->
         <h2>青森の温泉・地質検索</h2>
         
-        <!-- 1. 検索・絞り込みエリア -->
+        <!-- 検索・絞り込みエリア -->
         <div class="search-section">
             <input type="text" id="search-input" placeholder="温泉名やキーワード" oninput="filterOnsen()">
             
@@ -24,18 +24,34 @@
             <label><input type="checkbox" value="含鉄" onchange="filterOnsen()"> 含鉄</label>
             </div>
 
-            <hr>
+            <div class="bathed-group">
+            <label>
+                <input type="radio" name="bathed-group" value="all" onchange="filterOnsen()" checked> 
+                すべて
+            </label>
+            <label>
+                <input type="radio" name="bathed-group" value="hasVisited" onchange="filterOnsen()"> 
+                訪問済み
+            </label>
+            <label>
+                <input type="radio" name="bathed-group" value="hasNotVisited" onchange="filterOnsen()"> 
+                未訪問
+            </label>
+            </div>
 
-            <!-- 2. 詳細情報表示エリア（ピンをクリックした時にここが変わる） -->
-            <div id="detail-section">
-                <p class="placeholder-text">地図上のピンをクリックすると、ここに温泉と地質の詳細情報が表示されます。</p>
+            <hr>
+            <!-- 地質分析エリア（泉質のチェックをした時にここが変わる） -->
+            <div id="analysis-section">
+                <p class="analysis-text">チェックボックスにチェックをすると、ここに地質の分析情報が表示されます。</p>
             </div>
         </div>
     </div>
     <!-- 埋め込みマップのdivタグ。マップサイズはwidth（幅）とheight（高さ）で決まる -->
     <div id='mapcontainer' style='width:100%; height:500px; z-index:0;'/>
-    <!-- 凡例用 -->
-    <div id='legend' style='position:absolute; top:5px; left:5px;z-index: 10; background-color: white;' />
+    <!-- 詳細情報表示エリア（ピンをクリックした時にここが変わる） -->
+    <div id="detail-section" style='position:absolute; top:5px; left:5px;z-index: 10;width: 300px; background-color: white;'>
+        <p class="placeholder-text">地図上のピンをクリックすると、ここに温泉と地質の詳細情報が表示されます。</p>
+    </div>
 
     <script>
         const map =  new maplibregl.Map({
@@ -47,90 +63,135 @@
         });
 
         map.on('load', async() => {
-            // Add a GeoJSON source
-            map.addSource('onsen-geology',{
-                'type':'geojson',
-                'data': 'onsen_geology.geojson'
-            });
-            // Add a circle layer
-            map.addLayer({
-                'id':'onsen-layer',
-                'type':'circle',
-                'source':'onsen-geology',
-                'paint': {
-                    'circle-color': [
-                        'case', 
-                        ['in', '単純', ['get', '泉質']], '#42a5f5', //青
-                        ['in', '塩化物', ['get', '泉質']], '#ff7800', //オレンジ
-                        ['in', '炭酸水素塩', ['get', '泉質']], '#ab47bc', //ピンク
-                        ['in', '硫酸塩', ['get', '泉質']], '#8Bbc4a', //黄緑
-                        ['in', '酸性', ['get', '泉質']], '#e53935', //赤
-                        ['in', '硫黄', ['get', '泉質']], '#fbc02d', //濃い黄色
-                        '#9e9e9e'
-                    ],
-                    'circle-stroke-width': 1.5,
-                    'circle-stroke-color': '#ffffff'
-                },
-            });
-            // 産総研の地質図タイルソースを追加　※凡例数14
-            map.addSource('seamless-geology', {
-                'type': 'raster',
-                'tiles': [
-                    'https://gbank.gsj.jp/seamless/v2/api/1.3.1/tiles/{z}/{y}/{x}.png?type=level2'
-                ],
-                'tileSize': 256,
-                'attribution': '<a href="https://gbank.gsj.jp/seamless/" target="_blank">産総研 20万分の1日本シームレス地質図V2</a>'
-            });
+            // Add an image to use as a custom marker
+            const image = await map.loadImage('https://img.icons8.com/emoji/48/hot-springs-emoji.png');
+            map.addImage('custom-marker', image.data);
 
-            // 地質図レイヤーを温泉ピンより下に追加
-             map.addLayer({
-                'id': 'geology-layer',
-                'type': 'raster',
-                'source': 'seamless-geology',
-            }, 'onsen-layer');
+            fetch("http://127.0.0.1:8000/hot-springs")
+                .then(response => response.json())
+                .then(data => {
+                    hotSpringsGeoJson = data;
+
+                    // Add a GeoJSON source
+                    map.addSource('onsen-geology',{
+                        'type':'geojson',
+                        'data': hotSpringsGeoJson
+                    });
+                    // Add a circle layer
+                    map.addLayer({
+                        'id':'onsen-layer',
+                        'type':'symbol',
+                        'source':'onsen-geology',
+                        'layout': {
+                            'icon-image':'custom-marker',
+                            'icon-size': 0.5,
+                            'icon-allow-overlap': true
+                        },
+                    });
+                    map.addLayer({
+                        id: 'icon-background-layer',
+                        type: 'circle',
+                        source: 'onsen-geology',
+                        paint: {
+                            'circle-radius': 15,        
+                            'circle-color': [
+                                'case',
+                                ['==', ['get', 'visited'], true], '#FFB6C1', //ピンク
+                                '#ffffff' //他は白
+                            ],
+                            'circle-stroke-width': 1.5,  
+                            // 'circle-stroke-color': '#ffffff'
+                        }
+                    },'onsen-layer');
+
+                    // 産総研の地質図タイルソースを追加
+                    map.addSource('seamless-geology', {
+                        'type': 'raster',
+                        'tiles': [
+                            'https://gbank.gsj.jp/seamless/v2/api/1.3.1/tiles/{z}/{y}/{x}.png'
+                        ],
+                        'tileSize': 256,
+                        'attribution': '<a href="https://gbank.gsj.jp/seamless/" target="_blank">産総研 20万分の1日本シームレス地質図V2</a>'
+                    });
+
+                    // 地質図レイヤーを温泉ピンより下に追加
+                    map.addLayer({
+                        'id': 'geology-layer',
+                        'type': 'raster',
+                        'source': 'seamless-geology',
+                        'paint' : {
+                            'raster-opacity': 0.7
+                        }
+                    }, 'icon-background-layer');
+                });
         });
 
-        async function loadHtmlFromApi() {
+        async function GetLegendFromApi(point) {
             try {
                 // 1. APIを呼び出す
-                const response = await fetch('https://gbank.gsj.jp/seamless/v2/api/1.3.1/legend.html?type=level2');
+                const paraPoint =  point != null ? `?point=${point[1]},${point[0]}` : '';
+                const response = await fetch(`https://gbank.gsj.jp/seamless/v2/api/1.3.1/legend.json`+paraPoint);
                 
                 // エラーハンドリング（HTTPステータスチェック）
                 if (!response.ok) {
                     throw new Error(`HTTPエラー! ステータス: ${response.status}`);
                 }
 
-                // 2. レスポンスをテキスト（HTML文字列）として取得
-                const htmlText = await response.text();
-
-                // 3. 指定した要素の innerHTML に代入
-                const targetElement = document.getElementById('legend'); // 表示させたい要素のID
-                targetElement.innerHTML = htmlText;
+                // 2. レスポンスをjsonとして取得
+                const ret = await response.json();
+                return ret;
 
             } catch (error) {
-                console.error('HTMLの取得に失敗しました:', error);
+                console.error('Legendの取得に失敗しました:', error);
             }
         }
-
-        // 凡例の取得
-        loadHtmlFromApi();
-
-
         // ピンをクリックした時にサイドバーに詳細を表示する処理
-        map.on('click', 'onsen-layer', (e) => {
-            const props = e.features[0].properties;
-            
+        map.on('click', 'onsen-layer', async(e) => {
+            const selectedFeatureId = e.features[0].properties.id;
+            const legend = await GetLegendFromApi(e.features[0].geometry.coordinates);
+            let props = null
+
+             await fetch(`http://127.0.0.1:8000/hot-springs/${selectedFeatureId}`)
+                .then(response => response.json())
+                .then(data => {
+                    props = data.features[0].properties;
+                })
+
             const detailHtml = `
-                <h2>${props.P12_002}</h2>
-                <h4>${props.P12_006}</h4>
-                <h4>${props.symbol}</h4>
-                <h4>${props.泉質}</h4>
+                <h2>${props.name}</h2>
+                <h4>${props.address}</h4>
+                <h4>${props.geology}</h4>
+                <h5>${legend.group_ja}</h5>
+                <h5>${legend.lithology_ja}</h5>
+                <h4>${props.quality}</h4>
                 <h4>🌋 地質との関わり</h4>
-                <p>${props.memo || '〇〇〇'}</p>
+                <p>${props.description || '〇〇〇'}</p>
+                <label><input type="checkbox" id="visited-checkbox" onchange="changedVisited(${props.id})"> 訪問済み</label>
             `;
-            
             document.getElementById('detail-section').innerHTML = detailHtml;
+            document.getElementById("visited-checkbox").checked = props.visited; 
         });
+
+        async function changedVisited(id){
+            const checkbox = document.getElementById("visited-checkbox");
+
+            const response = await fetch(
+                `http://127.0.0.1:8000/hot-springs/${id}/visited`,
+                {
+                    method: "PUT",
+                    headers: {
+                        "Content-Type": "application/json"
+                    },
+                    body: JSON.stringify({
+                        visited: checkbox.checked
+                    })
+                }
+            );
+
+            selectedFeature = hotSpringsGeoJson.features.find(x => x.properties.id == id)
+            selectedFeature.properties.visited = checkbox.checked
+            map.getSource('onsen-geology').setData(hotSpringsGeoJson);
+        }
 
         // 検索・絞り込み処理
         function filterOnsen() {
@@ -140,31 +201,73 @@
             // チェックされたタグ（泉質）を取得
             const checkboxes = document.querySelectorAll('.tag-group input[type="checkbox"]:checked');
             const checkedTags = Array.from(checkboxes).map(cb => cb.value);
-
-            // MapLibreのフィルター条件を組み立てる
             let filters = ['all'];
-
             // 1. フリーワード検索（温泉名または泉質に含まれるか）
             if (keyword) {
                 filters.push([
                     'any',
-                    ['in', keyword, ['get', 'P12_002']],
-                    ['in', keyword, ['get', '泉質']]
+                    ['in', keyword, ['get', 'name']],
+                    ['in', keyword, ['get', 'quality']]
                 ]);
             }
 
             // 2. チェックボックスの条件（選択した泉質が「すべて」含まれているか）
             checkedTags.forEach(tag => {
-                filters.push(['in', tag, ['get', '泉質']]);
+                filters.push(['in', tag, ['get', 'quality']]);
             });
 
+            // 3.ラジオボタンの条件
+            const checkedRadio = document.querySelector('.bathed-group input[name="bathed-group"]:checked');
+            switch(checkedRadio.value)
+            {
+                case 'all': break;
+                case 'hasVisited':
+                    filters.push(['==', ['get', 'visited'], true]);
+                    break;
+                case 'hasNotVisited':
+                    filters.push(['!=', ['get', 'visited'], true]);
+                    break;
+            }
+            
             // フィルターをレイヤーに適用（条件に合わないピンは非表示または半透明になる）
             if (filters.length > 1) {
+                map.setFilter('icon-background-layer', filters);
                 map.setFilter('onsen-layer', filters);
             } else {
+                map.setFilter('icon-background-layer', null); // フィルター解除
                 map.setFilter('onsen-layer', null); // フィルター解除
             }
+
+            map.once('idle', () => {
+                // フィルターが画面に反映された後に実行される
+                aggregateSenshitsu(); 
+            });
         }
+
+        async function aggregateSenshitsu(){
+            const features = map.queryRenderedFeatures({'layers':['onsen-layer']});
+            const counts = {};
+
+            // 地質別に集計
+            features.forEach(feature => {
+                const category = feature.properties.geology || '未分類';
+                if (!counts[category]) counts[category] = 0;
+                counts[category]++;
+            });
+            const response = await GetLegendFromApi();
+            let aggregateHTML = '<ul>';
+            const sortedcounts = Object.entries(counts).sort((a, b) => { return b[1] - a[1];});
+
+            sortedcounts.forEach(x => 
+            {
+                const legend = response.find(y => y.symbol == x[0]);
+                aggregateHTML += `<li >${legend.lithology_ja}: ${x[1]}件</li>`;
+            });
+            aggregateHTML += '</ul>';
+
+            document.getElementById('analysis-section').innerHTML = aggregateHTML;
+        }
+        
 
         // Change the cursor to a pointer when the mouse is over the places layer.
         map.on('mouseenter', 'onsen-layer', () => {
