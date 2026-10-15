@@ -32,7 +32,14 @@ HTML,JavaScript,MapLibre GL JS,FastAPI,PostgreSQL
 - 背景　　　：国土地理院
 
 ## 画像
+1.初期表示
 ![初期表示](image.png)
+
+2.泉質：硫黄で検索
 ![泉質：硫黄で絞り込み](image-1.png)
+
+3.地物をクリックして温泉情報と地質を表示
 ![地物をクリックして温泉情報と地質を表示](image-2.png)
+
+4.チェックを付けて訪問済みにする
 ![チェックを付けて訪問済みにする](image-3.png)
